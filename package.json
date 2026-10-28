@@ -1,0 +1,27 @@
+{
+  "name": "finguard-ai-finops-fraud-guardian",
+  "version": "1.0.0",
+  "description": "FinGuard AI — Conciliação Financeira, PII Masking (LGPD) e Detecção de Fraudes com IA (Google Gemini API Structured Outputs)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node tests/run-tests.js"
+  },
+  "keywords": [
+    "finops",
+    "fraud-detection",
+    "pii-masking",
+    "lgpd",
+    "gemini-api",
+    "structured-outputs",
+    "financial-reconciliation",
+    "cybersecurity"
+  ],
+  "author": "Staff Backend & AI Security Engineering",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^2.3.0"
+  }
+}

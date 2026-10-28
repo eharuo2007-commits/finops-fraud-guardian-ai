@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinGuard AI — Conciliação Financeira, PII Masking &amp; Detecção de Fraudes com IA</title>
+  <link rel="stylesheet" href="./src/ui/styles.css" />
+</head>
+<body>
+  <!-- TOPBAR DE ENGENHARIA & SEGURANÇA -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand-group">
+        <div class="brand-shield" aria-hidden="true">FG</div>
+        <div>
+          <h1 class="brand-title">
+            FinGuard AI
+            <span class="badge badge-normal" style="font-size:10.5px;">v2026.10 • ZERO-TRUST FINOPS</span>
+          </h1>
+          <div class="brand-subtitle">
+            Conciliação Financeira de Delivery • PII Data Masking (LGPD Art. 46) • Google Gemini Structured Outputs
+          </div>
+        </div>
+      </div>
+
+      <div class="topbar-badges">
+        <div class="status-pill green" title="Nenhum CPF, e-mail ou PAN de cartão é enviado em texto aberto para a IA">
+          <span class="status-dot"></span>
+          LGPD PII Masking: ATIVO
+        </div>
+        <div class="status-pill blue" id="engine-mode-pill">
+          <span class="status-dot"></span>
+          Gemini Structured Twin (gemini-3.8-flash)
+        </div>
+        <div class="status-pill amber" title="Persistência local dual: IndexedDB + LocalStorage SQL Mirror">
+          <span class="status-dot"></span>
+          DB: tb_finops_audit_logs
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-container">
+    <!-- BARRA DE CONTROLE DE LOTE, RETRY E CONFIGURAÇÃO GEMINI API -->
+    <section class="control-strip" aria-label="Controles de Execução do Pipeline">
+      <div class="control-actions">
+        <button type="button" class="btn btn-primary-green" id="btn-run-batch">
+          ⚡ Carregar &amp; Processar Lote (15 Transações)
+        </button>
+        <button type="button" class="btn btn-danger" id="btn-reset-batch" title="Limpar IndexedDB/LocalStorage e recarregar o lote original de 15 transações">
+          ↺ Resetar Lote &amp; DB
+        </button>
+        <button type="button" class="btn" id="btn-export-json" title="Exportar dump JSON da tabela tb_finops_audit_logs">
+          ⬇ Exportar tb_finops_audit_logs (.json)
+        </button>
+      </div>
+
+      <div class="api-config-group">
+        <label for="chk-simulate-retry" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;">
+          <input type="checkbox" id="chk-simulate-retry" checked />
+          Simular Retry Backoff (HTTP 429)
+        </label>
+        <input
+          type="password"
+          id="gemini-api-key-input"
+          class="input-dark"
+          style="width:270px;"
+          placeholder="Opcional: GEMINI_API_KEY (Live API)"
+          aria-label="Chave opcional da Google Gemini API"
+        />
+      </div>
+    </section>
+
+    <!-- BANNER DE PROGRESSO DO PIPELINE E TELEMETRIA DE RETRY -->
+    <section class="pipeline-banner" aria-live="polite">
+      <div class="pipeline-steps">
+        <span class="pipeline-step done">1. Ingestão Lote (15 Txs)</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">2. PII Masking (CPF / Email / PAN)</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">3. Regras Determinísticas</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">4. Gemini JSON Schema</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">5. IndexedDB (tb_finops_audit_logs)</span>
+      </div>
+      <div id="pipeline-status-text" style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--fin-green);">
+        Inicializando pipeline de segurança...
+      </div>
+      <div id="retry-telemetry-box" style="width:100%;"></div>
+    </section>
+
+    <!-- NAVEGAÇÃO DE ABAS / PAINÉIS -->
+    <nav class="nav-tabs" aria-label="Abas do Painel de Engenharia">
+      <button type="button" class="tab-btn active" data-tab="ALL">
+        🖥 Visão Integrada (Full Engineering View)
+      </button>
+      <button type="button" class="tab-btn" data-tab="COMPLIANCE">
+        📊 Dashboard de Compliance &amp; Métricas
+        <span class="tab-counter" id="tab-count-anomalies">0%</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="BATCH_PII">
+        🛡 Painel de Carga de Lote &amp; PII Masking
+        <span class="tab-counter" id="tab-count-pii">15</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="AUDIT_TABLE">
+        🗂 Tabela de Auditoria (tb_finops_audit_logs)
+        <span class="tab-counter" id="tab-count-audit">15</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="SCHEMA_SQL">
+        📐 Contrato JSON Schema &amp; SQL Dump
+      </button>
+    </nav>
+
+    <!-- ===================================================================
+         PAINEL 1: DASHBOARD DE COMPLIANCE & MÉTRICAS
+         =================================================================== -->
+    <section id="section-compliance-dashboard" aria-label="Dashboard de Compliance e Métricas">
+      <div class="kpi-grid" id="kpi-cards-container">
+        <!-- Preenchido dinamicamente por renderKpiCards -->
+      </div>
+
+      <div class="analytics-row">
+        <div class="panel-card" style="margin-bottom:0;">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Distribuição por Classificação de Anomalia (Gemini Structured Output)</h2>
+              <div class="panel-subtitle">Taxonomia estrita de conciliação de pedidos, cupons, repasses e estornos</div>
+            </div>
+            <span class="badge badge-blue">5 Classes Monitoradas</span>
+          </div>
+          <div class="dist-list" id="classification-dist-container"></div>
+        </div>
+
+        <div class="panel-card" style="margin-bottom:0;">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Políticas Determinísticas &amp; Guardrails Ativos</h2>
+              <div class="panel-subtitle">Validação pré-inferência de latência zero combinada com score preditivo</div>
+            </div>
+            <span class="badge badge-normal">ENFORCED</span>
+          </div>
+          <ul class="indicator-list">
+            <li class="indicator-item">
+              <span style="color:var(--fraud-red)">●</span>
+              <div>
+                <strong>RULE_SAME_MINUTE_DUPLICATE:</strong> Bloqueia transações concorrentes do mesmo pedido/titular submetidas na mesma janela de 60 segundos.
+              </div>
+            </li>
+            <li class="indicator-item">
+              <span style="color:var(--fraud-red)">●</span>
+              <div>
+                <strong>RULE_HARD_REFUND_LIMIT_EXCEEDED:</strong> Teto rígido de R$ 350,00 para estornos e bloqueio imediato se <code>refund_amount &gt; gross_amount</code>.
+              </div>
+            </li>
+            <li class="indicator-item">
+              <span style="color:var(--purple-coupon)">●</span>
+              <div>
+                <strong>RULE_SINGLE_USE_COUPON_SYBIL_REPLAY:</strong> Detecta abuso de cupons (&gt;55% off) e reutilização de voucher único via hash de cartão/device.
+              </div>
+            </li>
+            <li class="indicator-item">
+              <span style="color:var(--audit-amber-bright)">●</span>
+              <div>
+                <strong>RULE_MERCHANT_COMMISSION_UNDERFLOW:</strong> Audita repasses líquidos a restaurantes que violem a comissão mínima contratual (12%) ou excedam o GMV.
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         PAINEL 2: PAINEL DE CARGA DE LOTE & PII MASKING EM TEMPO REAL
+         =================================================================== -->
+    <section id="section-batch-pii" class="panel-card" aria-label="Painel de Carga de Lote e PII Masking">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">
+            🛡 Camada de Ingestão &amp; Sanitização — PII Data Masking em Tempo Real (Antes vs. Depois)
+          </h2>
+          <div class="panel-subtitle">
+            Inspecione como CPFs (<code>***.456.789-**</code>), e-mails, PANs de cartão e observações em texto livre são anonimizados antes do envio à Google Gemini API
+          </div>
+        </div>
+        <span class="badge badge-normal">LGPD ART. 46 • PCI-DSS COMPLIANT</span>
+      </div>
+
+      <div class="pii-Workbench">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;text-transform:uppercase;">
+            Lote Carregado (Selecione para Inspecionar):
+          </div>
+          <div class="tx-selector-list" id="pii-tx-selector-list"></div>
+        </div>
+
+        <div id="pii-comparison-container">
+          <!-- Preenchido dinamicamente por renderPiiComparisonPanel -->
+        </div>
+      </div>
+
+      <!-- Simulador de Injeção de Ataque em Tempo Real -->
+      <form id="form-inject-attack" class="custom-sim-form">
+        <div class="form-field" style="grid-column: span 2;">
+          <label for="sim-attack-vector">Simulador de Injeção de Transação / Vetor de Ataque no Lote:</label>
+          <select id="sim-attack-vector" class="input-dark">
+            <option value="OVER_REFUND">Ataque 1: Estorno Crítico Acima do Teto Rígido (R$ 750,00 sobre pedido de R$ 520,00)</option>
+            <option value="SAME_MINUTE_DUP">Ataque 2: Duplicação Maliciosa de Reembolso no Mesmo Minuto (Replay ORD-88415)</option>
+            <option value="COUPON_SYBIL">Ataque 3: Abuso de Cupom 80% OFF com Mesmo Cartão e Device Fingerprint (Sybil)</option>
+          </select>
+        </div>
+        <div class="form-field" style="justify-content:flex-end;">
+          <button type="submit" class="btn btn-blue" style="height:36px;justify-content:center;">
+            + Injetar Transação &amp; Auditar com IA
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===================================================================
+         PAINEL 3: TABELA DE AUDITORIA DE TRANSAÇÕES (tb_finops_audit_logs)
+         =================================================================== -->
+    <section id="section-audit-table" class="panel-card" aria-label="Tabela de Auditoria de Transações">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">
+            🗂 Tabela de Auditoria de Transações — <code>tb_finops_audit_logs</code>
+          </h2>
+          <div class="panel-subtitle">
+            Registros persistidos em IndexedDB / LocalStorage com Fraud Score, Classificação Estrita, Ação Recomendada e Parecer de Explicabilidade da IA
+          </div>
+        </div>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="filter-pills">
+          <button type="button" class="filter-pill active" data-table-filter="ALL">Todas</button>
+          <button type="button" class="filter-pill" data-table-filter="ANOMALIES">🚨 Apenas Fraudes / Anomalias</button>
+          <button type="button" class="filter-pill" data-table-filter="BLOCKED">✕ Bloqueadas (AUTOMATIC_BLOCK)</button>
+          <button type="button" class="filter-pill" data-table-filter="REFUND_DUP">⚡ Duplicidade de Estorno</button>
+          <button type="button" class="filter-pill" data-table-filter="COUPON">🎟 Abuso de Cupons</button>
+          <button type="button" class="filter-pill" data-table-filter="MERCHANT">⚖ Divergência Repasse</button>
+        </div>
+
+        <input
+          type="search"
+          id="audit-search-input"
+          class="input-dark"
+          style="width:280px;"
+          placeholder="Buscar por ID, pedido, restaurante, cupom..."
+          aria-label="Buscar transações auditadas"
+        />
+      </div>
+
+      <div class="table-responsive">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th>Transação / Pedido</th>
+              <th>Tipo &amp; Restaurante</th>
+              <th>Valores Financeiros</th>
+              <th>PII Mascarado (LGPD)</th>
+              <th>Fraud Score</th>
+              <th>Classificação (IA)</th>
+              <th>Ação Recomendada</th>
+              <th>Auditoria &amp; JSON</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-tbody">
+            <!-- Preenchido dinamicamente por renderAuditTableRows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         PAINEL 4: CONTRATO JSON SCHEMA (GEMINI API) & DUMP SQL
+         =================================================================== -->
+    <section id="section-schema-sql" class="panel-card" aria-label="Contrato JSON Schema e SQL Dump">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">📐 Especificação do Contrato JSON Schema (Gemini Structured Outputs) &amp; DDL SQL</h2>
+          <div class="panel-subtitle">
+            Schema imposto via <code>response_format</code> na Interactions API (<code>gemini-3.8-flash</code>) e estrutura relacional da tabela <code>tb_finops_audit_logs</code>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;">
+            JSON Schema Estrito (FINGUARD_AUDIT_JSON_SCHEMA):
+          </div>
+          <pre class="code-block" id="schema-json-viewer" style="max-height:320px;"></pre>
+        </div>
+
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;">
+            System Instruction &amp; DDL SQL (tb_finops_audit_logs):
+          </div>
+          <pre class="code-block" id="sql-dump-viewer" style="max-height:320px;color:var(--fin-green);"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL DE INSPEÇÃO DE AUDITORIA E EXPLICABILIDADE (<dialog>) -->
+  <dialog id="audit-inspection-modal" class="audit-modal" aria-labelledby="modal-tx-title">
+    <div class="modal-header">
+      <h3 id="modal-tx-title" style="font-size:15px;font-weight:700;font-family:var(--font-mono);">
+        Inspeção de Auditoria Técnica
+      </h3>
+      <button type="button" class="btn" id="btn-close-modal">✕ Fechar (ESC)</button>
+    </div>
+    <div class="modal-body" id="modal-inspection-body">
+      <!-- Renderizado dinamicamente por renderInspectionModalContent -->
+    </div>
+  </dialog>
+
+  <script type="module" src="./src/ui/app.js"></script>
+</body>
+</html>
